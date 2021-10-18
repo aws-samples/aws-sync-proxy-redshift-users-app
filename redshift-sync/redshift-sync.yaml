@@ -1,0 +1,160 @@
+Transform: 'AWS::Serverless-2016-10-31'
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: AwsSyncProxyRedshiftUsersApp
+    Description: Create Proxy Redshift users for Federated Query use
+    Author: 'Rohit Masur'
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: LICENSE.txt
+    ReadmeUrl: README.md
+    Labels: ['redshift']
+    HomePageUrl: https://www.github.com/AwsSyncProxyRedshiftUsersApp
+    SemanticVersion: 2021.7.19
+    SourceCodeUrl: https://www.github.com/AwsSyncProxyRedshiftUsersApp
+
+# Parameters are CloudFormation features to pass input
+# to your template when you create a stack
+Parameters:
+  SyncProgramName:
+    Description: 'AWS Lambda function name. This name must satisfy the pattern ^[a-z0-9-_]{1,64}$'
+    Type: String
+    Default: "AwsSyncProxyRedshiftUsersApp"
+  S3Bucket:
+    Description: 'The name of the bucket which the function can use.'
+    Type: String
+    Default: "AwsSyncProxyRedshiftUsersApp"
+  ConnectorUsersSchema:
+    Description: 'The schema name of the Amazon Redshift table.'
+    Type: String
+  ConnectorUsersTable:
+    Description: 'The table name of the Amazon Redshift table.'
+    Type: String
+  ProxyUsersPrefix:
+    Description: 'Prefix for the proxy users.'
+    Type: String
+  RedshiftClusterId:
+    Description: 'Redshift Cluster ID'
+    Type: String
+  RedshiftDBName:
+    Description: 'Redshift Database Name'
+    Type: String
+  RedshiftDBUrl:
+    Description: 'Redshift DB URL'
+    Type: String
+  RedshiftPort:
+    Description: 'Redshift Port Number'
+    Type: String
+  AWSRegion:
+    Description: 'AWS Region'
+    Type: String
+  RedshiftDBUser:
+    Description: 'Redshift User'
+    Type: String
+  VpcId:
+    Description: 'VPC ID'
+    Type: 'AWS::EC2::VPC::Id'
+  SubnetIds:
+    Description: 'One or more Subnet IDs corresponding to the Subnet that the Lambda function can use to access you data source. (e.g. subnet1,subnet2)'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ExecutionSchedule:
+    Type: String
+    Description: 'Cron expression to Lambda function through EventBridge rule'
+    Default: 'cron(0 11 ? * MON-FRI *)'
+
+Resources:
+  LambdaSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'AFQ Sync Users Lambda VPC Security Group'
+      VpcId: !Ref VpcId
+  ConnectorConfig:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Environment:
+        Variables:
+          s3_bucket: !Ref S3Bucket
+          ConnectorUsersSchema: !Ref ConnectorUsersSchema
+          ConnectorUsersTable: !Ref ConnectorUsersTable
+          ProxyUsersPrefix: !Ref ProxyUsersPrefix
+          RedshiftClusterId: !Ref RedshiftClusterId
+          RedshiftDBName: !Ref RedshiftDBName
+          RedshiftDBUser: !Ref RedshiftDBUser
+          RedshiftDBUrl: !Ref RedshiftDBUrl
+          RedshiftPort: !Ref RedshiftPort
+          AWSRegion: !Ref AWSRegion
+
+      FunctionName: !Sub "${SyncProgramName}"
+      Handler: CreateRedshiftProxyUsers.handler
+      CodeUri: src/
+      Description: "Sync Redshift Proxy Users"
+      Runtime: python3.7
+      Policies:
+        - Statement:
+            - Action:
+                - s3:ListAllMyBuckets
+              Effect: Allow
+              Resource: '*'
+          Version: '2012-10-17'
+        - Statement:
+            - Action:
+                - sts:AssumeRole
+              Effect: Allow
+              Resource: '*'
+          Version: '2012-10-17'
+        - Statement:
+            - Action:
+                - redshift:GetClusterCredentials
+                - redshift:CreateClusterUser
+              Effect: Allow
+              Resource:
+                - 'arn:aws:redshift:*:*:dbname:*/*'
+                - "arn:aws:redshift:*:*:dbuser:*/*"
+          Version: '2012-10-17'
+        - Statement:
+            - Action:
+                - s3:ListBucket
+              Effect: Allow
+              Resource:
+                - !Sub 'arn:aws:s3:::${S3Bucket}'
+          Version: '2012-10-17'
+        - Statement:
+            - Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:CreateSecret
+              Effect: Allow
+              Resource: '*'
+        - S3ReadPolicy:
+            BucketName:
+              Ref: S3Bucket
+        - S3WritePolicy:
+            BucketName:
+              Ref: S3Bucket
+            #VPCAccessPolicy allows our connector to run in a VPC so that it can access your data source.
+      VpcConfig:
+        SecurityGroupIds:
+          #SecurityGroup that should be applied to the Lambda function
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref SubnetIds
+
+  EventBridgeScheduledEventRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: Scheduled Event Rule to be triggered periodically based on cron expression.
+      ScheduleExpression: !Ref ExecutionSchedule
+      State: "ENABLED"
+      Targets:
+        - Arn: !Sub "arn:aws:lambda:${AWSRegion}:${AWS::AccountId}:function:${SyncProgramName}"
+          Id: ScheduledSyncProgramLambda
+          Input: !Sub "{\"Input\":{\"redshift_cluster_id\":\"${RedshiftClusterId}\",\"redshift_database\":\"${RedshiftDBName}\",\"redshift_user\":\"${RedshiftDBUser}\",\"action\":\"CREATE_USER\"}}"
+
+  PermissionForScheduledEventToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SyncProgramName
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "EventBridgeScheduledEventRule"
+          - "Arn"

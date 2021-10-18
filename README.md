@@ -1,6 +1,70 @@
-## My Project
+## Table Level Access Control in AFQ
 
-TODO: Fill this README out!
+This serverless application handles creation and sync of proxy users in Redshift and AWS Secrets Manager allowing for table level access control when using the Athena Federated Query SDK.
+
+### Background
+Currently, when using the Athena Federated Query SDK, to get table level access control to the underlying database like Amazon Redshift, customers either have to
+manually create Secrets with actual credentials in AWS Secrets Manager for all the users or deploy multiple connectors (AWS Lambdas) for each user. This can lead to overheads like maintaining security, managing the lambda function invocations, credential rotations etc.
+Also, many customers may not want to store corporate credentials in AWS Secrets Manager for security/policy purposes.
+
+This serverless sync program resolves this issue by creating proxy users mirroring the privlieges of the actual users in Amazon Redshift and syncing them in AWS Secrets Manager. The AFQ SDK connector code then can use these proxy users to connect to Amazon Redshift and provide table level access to the tables and schemas.
+
+
+### Design
+
+![Alt text](sync-rs.jpg "Architecture")
+
+The Sync Program for Redshift uses following design.
+1. Customers create a table in Amazon Redshift containing the users who need access to Federated Queries
+2. Amazon EventBridge executes a scheduled event rule which triggers the SyncProxyUsers Lambda function
+3. The function creates a proxy user for each new user in table mirroring the privileges of the actual user
+4. Next, the lambda function creates a Secret for each proxy user which will be used by the AFQ Lambda function
+5. Finally, the lambda updates the Redshift table’s last_updated column.
+6. Once the Proxy users are set up, we need to add the logic in the deployed JDBC connector code to connect to Redshift using the proxy credentials.
+
+### New Federation Query Flow:
+```
+1. Federated Query Issued.
+2. AFQ SDK lambda invoked.
+3. Parse out the callee ID.
+4. Go to Secrets Manager to get the proxy credentials.
+5. Connect to Redshift with proxy credentials.
+6. Query Redshift tables as a proxy user which has exact same privleges of the currently logged in user allowing table level access.
+```
+
+### Parameters
+
+The Sync Program for Redshift exposes several configuration options via Lambda environment variables. More detail on the available parameters can be found below.
+
+* **ExecutionSchedule:** Cron expression to Lambda function through EventBridge rule
+* **S3Bucket:** The S3 bucket where the application code will be copied to.
+* **SyncProgramName:** AWS Lambda function name.
+* **VPC ID:** The VPC Id to be attached to the Lambda function
+* **AWS Region:** The AWS Region of the Lambda function
+* **RedshiftClusterId:** The Redshift Cluster ID.
+* **RedshiftDBName:** The Redshift Database Name.
+* **RedshiftDBUrl:** The Redshift Database URL.
+* **RedshiftDBUser:** The Redshift User.
+* **RedshiftPort:** The Redshift Port Number.
+* **SubnetIds:** One or more Subnet IDs corresponding to the Subnet that the Lambda function can use to access your data source. (e.g. subnet1, subnet2)
+
+
+### Deploying The Sync Program
+
+To use the Sync Program build and deploy this application from source follow the below steps:
+
+From the redshift-sync dir, run  `sh ../tools/publish.sh S3_BUCKET_NAME redshift-sync` to publish the connector to your private AWS Serverless Application Repository. The S3_BUCKET in the command is where a copy of the connector's code will be stored for Serverless Application Repository to retrieve it. This will allow users with permission to do so, the ability to deploy instances of the connector via 1-Click form. Then navigate to [Serverless Application Repository](https://aws.amazon.com/serverless/serverlessrepo)
+
+### Advantages
+1. Multiple users can use the same connector for table level access.
+2. Automated event-driven creation and sync of proxy users; Just add them to the Redshift table.
+3. Actual Amazon Redshift credentials are not stored in AWS Secrets Manager, saving security overheads.
+4. Easy to maintain the users who need access to federated queries.
+
+
+### Limitations
+1. All usual AWS Lambda limits.
+
 
 Be sure to:
 
