@@ -1,4 +1,4 @@
-## Table Level Access Control in AFQ using aws-sync-proxy-redshift-users-app
+## Table Level Access Control in AFQ
 
 This serverless application handles creation and sync of proxy users in Amazon Redshift and AWS Secrets Manager allowing for table level access control when using the Athena Federated Query SDK.
 
