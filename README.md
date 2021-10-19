@@ -1,6 +1,6 @@
 ## Table Level Access Control in AFQ
 
-This serverless application handles creation and sync of proxy users in Redshift and AWS Secrets Manager allowing for table level access control when using the Athena Federated Query SDK.
+This serverless application handles creation and sync of proxy users in Amazon Redshift and AWS Secrets Manager allowing for table level access control when using the Athena Federated Query SDK.
 
 ### Background
 Currently, when using the Athena Federated Query SDK, to get table level access control to the underlying database like Amazon Redshift, customers either have to
@@ -14,12 +14,12 @@ This serverless sync program resolves this issue by creating proxy users mirrori
 
 ![Alt text](sync-rs.jpg "Architecture")
 
-The Sync Program for Redshift uses following design.
+The Sync Program for Amazon Redshift uses following design.
 1. Customers create a table in Amazon Redshift containing the users who need access to Federated Queries
 2. Amazon EventBridge executes a scheduled event rule which triggers the SyncProxyUsers Lambda function
-3. The function creates a proxy user for each new user in table mirroring the privileges of the actual user
+3. The function creates a proxy user for each new user in table mirroring the privileges (Group, Schema and Table level access) of the actual user
 4. Next, the lambda function creates a Secret for each proxy user which will be used by the AFQ Lambda function
-5. Finally, the lambda updates the Redshift table’s last_updated column.
+5. Finally, the lambda updates the Amazon Redshift table’s `last_updated column`.
 6. Once the Proxy users are set up, we need to add the logic in the deployed JDBC connector code to connect to Redshift using the proxy credentials.
 
 ### New Federation Query Flow:
@@ -28,15 +28,14 @@ The Sync Program for Redshift uses following design.
 2. Athena Federation Query SDK lambda invoked.
 3. Parse out the callee ID.
 4. Go to Secrets Manager to get the proxy credentials.
-5. Connect to Redshift with proxy credentials.
-6. Query Redshift tables as a proxy user which has exact same privleges of the currently logged in user allowing table level access.
+5. Connect to Amazon Redshift with proxy credentials.
+6. Query Amazon Redshift tables as a proxy user which has exact same privleges of the currently logged in user allowing table level access.
 ```
 
 ### Prerequisites
 
 1. The [Amazon Athena Lambda JDBC Connector](https://github.com/awslabs/aws-athena-query-federation/tree/master/athena-jdbc) deployed in your AWS account
-2. The code to parse out the callee ID and build the JDBC connection with proxy credentials must be added to the Amazon Athena JDBC Connector code
-3. The `ConnectorUsersTable` must already be created in Amazon Redshift with below schema:
+2. The `ConnectorUsersTable` must already be created in Amazon Redshift with below schema:
    ```
    CREATE TABLE <ConnectorUsersSchema>.<ConnectorUsersTable> (
     corp_id varchar,
@@ -48,7 +47,7 @@ The Sync Program for Redshift uses following design.
 
 ### Parameters
 
-The Sync Program for Redshift exposes several configuration options via Lambda environment variables. More detail on the available parameters can be found below.
+The Sync Program for Amazon Redshift exposes several configuration options via Lambda environment variables. More detail on the available parameters can be found below.
 
 * **ExecutionSchedule:** Cron expression to Lambda function through EventBridge rule
 * **S3Bucket:** The S3 bucket where the application code will be copied to.
@@ -72,12 +71,15 @@ To use the Sync Program build and deploy this application from source follow the
 
 From the redshift-sync dir, run  `sh ../tools/publish.sh S3_BUCKET_NAME redshift-sync` to publish the connector to your private AWS Serverless Application Repository. The S3_BUCKET in the command is where a copy of the connector's code will be stored for Serverless Application Repository to retrieve it. This will allow users with permission to do so, the ability to deploy instances of the connector via 1-Click form. Then navigate to [Serverless Application Repository](https://aws.amazon.com/serverless/serverlessrepo)
 
+### Post-requisites
+1. Once this application is deployed, make sure the app's Security Group has access to the Amazon Redshift's VPC so that the application can connect to Amazon Redshift
+2. Add the necessary code to the Amazon Athena JDBC Connector code to parse out the callee ID and build the JDBC connection with proxy credentials.
+
 ### Advantages
 1. Multiple users can use the same connector for table level access.
-2. Automated event-driven creation and sync of proxy users; Just add them to the Redshift table.
+2. Automated event-driven creation and sync of proxy users; Just add them to the Amazon Redshift table.
 3. Actual Amazon Redshift credentials are not stored in AWS Secrets Manager, saving security overheads.
 4. Easy to maintain the users who need access to federated queries.
-
 
 ### Limitations
 1. All usual AWS Lambda limits.
