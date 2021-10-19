@@ -25,12 +25,26 @@ The Sync Program for Redshift uses following design.
 ### New Federation Query Flow:
 ```
 1. Federated Query Issued.
-2. AFQ SDK lambda invoked.
+2. Athena Federation Query SDK lambda invoked.
 3. Parse out the callee ID.
 4. Go to Secrets Manager to get the proxy credentials.
 5. Connect to Redshift with proxy credentials.
 6. Query Redshift tables as a proxy user which has exact same privleges of the currently logged in user allowing table level access.
 ```
+
+### Prerequisites
+
+1. The [Amazon Athena Lambda JDBC Connector](https://github.com/awslabs/aws-athena-query-federation/tree/master/athena-jdbc) deployed in your AWS account
+2. The code to parse out the callee ID and build the JDBC connection with proxy credentials must be added to the Amazon Athena JDBC Connector code
+3. The `ConnectorUsersTable` must already be created in Amazon Redshift with below schema:
+   ```
+   CREATE TABLE <ConnectorUsersSchema>.<ConnectorUsersTable> (
+    corp_id varchar,
+    aws_account varchar,
+    is_active boolean,
+    last_updated timestamp without time zone
+   );
+   ```
 
 ### Parameters
 
@@ -41,6 +55,9 @@ The Sync Program for Redshift exposes several configuration options via Lambda e
 * **SyncProgramName:** AWS Lambda function name.
 * **VPC ID:** The VPC Id to be attached to the Lambda function
 * **AWS Region:** The AWS Region of the Lambda function
+* **ConnectorUsersSchema:** The schema name of the Amazon Redshift table.
+* **ConnectorUsersTable:** The table name of the Amazon Redshift table.
+* **ProxyUsersPrefix:** Prefix for the proxy users.
 * **RedshiftClusterId:** The Redshift Cluster ID.
 * **RedshiftDBName:** The Redshift Database Name.
 * **RedshiftDBUrl:** The Redshift Database URL.
@@ -65,11 +82,9 @@ From the redshift-sync dir, run  `sh ../tools/publish.sh S3_BUCKET_NAME redshift
 ### Limitations
 1. All usual AWS Lambda limits.
 
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+### References
+[Amazon Athena Federated Query](https://docs.aws.amazon.com/athena/latest/ug/connect-to-a-data-source.html)
+[Athena Federation Sdk](https://github.com/awslabs/aws-athena-query-federation/tree/master/athena-federation-sdk)
 
 ## Security
 
