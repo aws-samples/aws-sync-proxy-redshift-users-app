@@ -9,9 +9,9 @@ Metadata:
     LicenseUrl: LICENSE.txt
     ReadmeUrl: README.md
     Labels: ['redshift']
-    HomePageUrl: https://www.github.com/AwsSyncProxyRedshiftUsersApp
+    HomePageUrl: https://github.com/aws-samples/aws-sync-proxy-redshift-users-app
     SemanticVersion: 2021.7.19
-    SourceCodeUrl: https://www.github.com/AwsSyncProxyRedshiftUsersApp
+    SourceCodeUrl: https://github.com/aws-samples/aws-sync-proxy-redshift-users-app
 
 # Parameters are CloudFormation features to pass input
 # to your template when you create a stack
